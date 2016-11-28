@@ -1,4 +1,6 @@
-require 'dijkstra'
+
+require 'evolution'
+#require 'dijkstra'
 
 # Network topology graph
 class Graph
@@ -34,7 +36,9 @@ class Graph
 
   def dijkstra(source_mac, destination_mac)
     return if @graph[destination_mac].empty?
-    route = Dijkstra.new(@graph).run(source_mac, destination_mac)
+    route = Evolution.new(@graph).run(source_mac, destination_mac)
+#print "routefinished"
+#print route
     route.reject { |each| each.is_a? Integer }
   end
 end
