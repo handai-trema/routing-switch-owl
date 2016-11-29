@@ -295,7 +295,7 @@ link
 
 
 また、path.txtを出力するにあたって、以下のファイルに変更を加えた。
-* [vendor/topology/lib/view/vis.rb](https://github.com/handai-trema/topology-owl/blob/master/lib/command_line.rb)
+* [vendor/topology/lib/view/vis.rb](https://github.com/handai-trema/routing-switch-owl/blob/develop/vendor/topology/lib/view/vis.rb)
 
 それぞれについて説明を行う。
 
@@ -414,7 +414,6 @@ def checkLinkID(getList, a, b)
 
 #### 実行結果
 
-まず、次のように課題の内容に従って実機を準備する。
 
 
 
