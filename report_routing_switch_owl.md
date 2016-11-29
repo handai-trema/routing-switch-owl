@@ -26,6 +26,220 @@
 
 ### 経路選択のアルゴリズム
 
+####進化的アプローチの概要
+
+今回、ルーティングには進化的アプローチを用いた。進化的アプローチは、生物の進化モデルに着想を得たアプローチである。このアプローチでは、始めは精度の低い経路を導き出すが、時間を経るにつれて高い精度の経路を導き出す。これは生物が世代を経るにつれて環境に適応し、生存能力の高い個体へと進化していくことに着想を得ている。
+
+#####利点
+
+進化的アプローチでは、始めは精度の低い経路を導き出すが、時間を経るにつれて高い精度の経路を導き出す、という特性を持っている。
+そのため、ルーティングに費やすことのできる時間が長い場合には制度の高い経路を算出し、ルーティングに費やすことのできる時間が短い場合には、その時間内で算出できる最良の解を算出する。
+このように、要求される実行時間に応じて柔軟に対応することができるという点で優れている。
+
+#####欠点
+
+ランダム性の高いアプローチであり、確実な精度を保証することができない。
+
+####進化的アルゴリズムの概要
+
+以下で、進化的アプローチを用いた経路選択アルゴリズムについて説明する。このアルゴリズムのことを、以後進化的アルゴリズムと呼ぶ。
+
+#####step1:ランダムに暫定経路を決定
+スタートノードからゴールノードへの経路をランダムに決定する。
+
+#####step2:暫定経路を連続的に更新
+
+######step2-1:暫定経路の更新
+step1で決定した暫定経路の一部を変更する。変更方法としては、スタートノードからゴールノードへの経路において経由しているルーティングスイッチのうちどれか１つをランダムに決定し、該当スイッチからゴールノードへの経路をstep1と同様にランダムに決定する。この結果、暫定経路の後半部分が一部変更された経路(変更経路)が完成する。次に、暫定経路と変更経路の精度を比較し、変更経路の方が精度が良い場合に限り、暫定経路を変更経路で上書きする。
+
+######step2-2:暫定経路の更新を繰り返す
+
+step2-1で説明した暫定経路の更新を、予め決めておいた回数だけ繰り返すことで暫定経路の精度は良くなってゆく。予め決めておいた回数だけ更新を繰り返し終えた後の、暫定経路を最終的にルーティングに用いる経路として決定する。
+
+####進化的アルゴリズムの詳細
+
+#####ランダムな経路決定
+step1のランダムな経路決定の具体的な方法を説明する。ランダムな経路決定では、スタートノードからゴールノードまでノードを辿り、経路を１つ決定する。ここでは、経由したノードを順に記録しておく経路配列及び、現時点のノードを表す暫定ノードを用いる。以下は該当箇所のソースコードである。
+
+```
+  def seek_one_path(path_o,goal)
+    path_c = Array.new
+    path_c = path_o.dup
+
+#次ノードの候補を取得    
+      next_nodes = next_node(path_c)
+
+#次ノードの候補がなければ破棄してはじめから。
+      if next_nodes.length==0 then
+         path_c = path_o.dup
+#次ノードの候補があれば次ノードへ進める
+      else
+        node_i = next_nodes[rand(next_nodes.length)]
+        path_c.push(node_i)
+        goal_node=@all.select { |n| n.name == goal }
+        if(node_i.name == goal) then
+          break
+        end
+      end
+    end
+    return path_c
+  end
+```
+
+この動作の詳細を、以下で説明する。
+
+######step1-1:初期設定
+まず始めに、スタートノードを暫定ノードとして設定する。
+また、経路配列を生成し、スタートノードを追加する。
+
+######step1-2:次ノード決定
+step1-1で説明した暫定ノードと隣接するノードのうち、まだ経由したことのない(経路配列に含まれていない)ノードをすべて次ノード候補に設定する。次ノード候補のノードの中から１つ、ランダムにノードを選択し、そのノードを経路配列に追加して、次の暫定ノードに決定する。
+
+以下に該当箇所のソースコードを示す。
+```
+  def next_node(path_c)
+    last_node = path_c.last
+    next_nodes = Array.new
+    last_node.neighbors.each do |each|
+      if path_c.include?(find(each, @all))==false then
+        next_nodes.push(find(each, @all))
+      end
+    end
+    return next_nodes
+  end
+```
+
+######step1-3:次ノード決定の繰り返しと終了条件
+step1-2の作業を、次ノード候補がなくなるか、暫定ノードがゴールノードになるまで繰り返す。以下の終了条件に当てはまった場合には、step1-2の繰り返し作業を終了し、以下の動作に移行する。
+
+#######次ノード候補がなくなった場合
+
+ここまで辿った経路を棄却し、新たに経路を辿り直す。経路配列を空に初期化して、step1-1へ戻る。
+
+#######ゴールノードに到達した場合
+
+経路配列の内容を、暫定経路に決定し、step1の作業を終了する。
+
+
+#####step2-1:暫定経路の更新
+step1で決定した暫定経路の一部を変更する。
+
+以下に該当箇所のソースコードを示す。
+```
+
+    #突然変異
+    for k in 1.. generation_number
+      r=rand(@path.length-2)
+      path_c = seek_one_path(@path[0 .. r+1],goal)
+      if path_c.length < @min_length then
+        @path = path_c
+        @min_length = path_c.length
+      end
+    end
+```
+
+
+
+######step2-1-1:
+
+経路配列から、最初の要素と最後の要素であるスタートノードとゴールノードを取り除いた変更対象配列を用意する。
+
+######step2-1-2:
+変更配列ノードの中から1つのノードを乱数により決定し、変更対象ノードとする。
+
+######step2-1-3:
+変更対象配列のうち、変更対象ノード以降の要素をすべて変更対象配列から削除する。
+
+######step2-1-4:
+ここで、変更対象ノードを経路配列に、変更対象ノードを暫定ノードに設定して、step1-2の作業を行うことにより、新たな暫定経路の候補を生成する(変更経路)。
+
+######step2-1-5:
+次に、暫定経路と変更経路の精度を比較し、変更経路の方が精度が良い場合に限り、暫定経路を変更経路で上書きする。
+
+######step2-2:暫定経路の更新を繰り返す
+
+step2-1で説明した暫定経路の更新を、予め決めておいた回数だけ繰り返す。その後の暫定経路を最終的にルーティングに用いる経路として決定する。
+
+
+
+
+
+####実行結果
+
+進化的アプローチを用いた経路選択アルゴリズムでの実行結果を述べる。
+まず、以下のコマンドを実行してプログラムを動作させる。
+
+terminal1
+```
+~/routing-switch-owl$ bundle exec ./bin/trema run ./lib/routing_switch.rb -c trema.conf
+```
+
+次に別ターミナルにおいて、以下のようにコマンドを実行した。
+入力コマンドと実行結果を示す。
+
+terminal2
+```
+ensyuu2@ensyuu2-VirtualBox:~/routing-switch-owl$ ./bin/trema show_stats host1
+ensyuu2@ensyuu2-VirtualBox:~/routing-switch-owl$ ./bin/trema show_stats host2
+ensyuu2@ensyuu2-VirtualBox:~/routing-switch-owl$ ./bin/trema show_stats host3
+ensyuu2@ensyuu2-VirtualBox:~/routing-switch-owl$ ./bin/trema show_stats host4
+ensyuu2@ensyuu2-VirtualBox:~/routing-switch-owl$ ./bin/trema send_packets --source host2 --dest host1
+ensyuu2@ensyuu2-VirtualBox:~/routing-switch-owl$ ./bin/trema send_packets --source host1 --dest host2
+ensyuu2@ensyuu2-VirtualBox:~/routing-switch-owl$ ./bin/trema send_packets --source host3 --dest host1
+ensyuu2@ensyuu2-VirtualBox:~/routing-switch-owl$ ./bin/trema send_packets --source host1 --dest host3
+ensyuu2@ensyuu2-VirtualBox:~/routing-switch-owl$ ./bin/trema send_packets --source host4 --dest host1
+ensyuu2@ensyuu2-VirtualBox:~/routing-switch-owl$ ./bin/trema send_packets --source host1 --dest host4
+ensyuu2@ensyuu2-VirtualBox:~/routing-switch-owl$ ./bin/trema send_packets --source host2 --dest host3
+ensyuu2@ensyuu2-VirtualBox:~/routing-switch-owl$ ./bin/trema show_stats host1Packets sent:
+  192.168.0.1 -> 192.168.0.2 = 1 packet
+  192.168.0.1 -> 192.168.0.3 = 1 packet
+  192.168.0.1 -> 192.168.0.4 = 1 packet
+Packets received:
+  192.168.0.2 -> 192.168.0.1 = 1 packet
+  192.168.0.3 -> 192.168.0.1 = 1 packet
+  192.168.0.4 -> 192.168.0.1 = 1 packet
+ensyuu2@ensyuu2-VirtualBox:~/routing-switch-owl$ ./bin/trema show_stats host2
+Packets sent:
+  192.168.0.2 -> 192.168.0.1 = 1 packet
+  192.168.0.2 -> 192.168.0.3 = 1 packet
+Packets received:
+  192.168.0.1 -> 192.168.0.2 = 1 packet
+ensyuu2@ensyuu2-VirtualBox:~/routing-switch-owl$ ./bin/trema show_stats host3
+Packets sent:
+  192.168.0.3 -> 192.168.0.1 = 1 packet
+Packets received:
+  192.168.0.1 -> 192.168.0.3 = 1 packet
+  192.168.0.2 -> 192.168.0.3 = 1 packet
+ensyuu2@ensyuu2-VirtualBox:~/routing-switch-owl$ ./bin/trema show_stats host4
+Packets sent:
+  192.168.0.4 -> 192.168.0.1 = 1 packet
+Packets received:
+  192.168.0.1 -> 192.168.0.4 = 1 packet
+```
+
+また、上述のコマンド実行結果を元のターミナルで以下の確認すると以下のような結果となった。
+
+terminal1
+```
+ensyuu2@ensyuu2-VirtualBox:~/routing-switch-owl$ bundle exec ./bin/trema run ./lib/routing_switch.rb -c trema.conf
+Path Manager started.
+Topology started (#<View::VisJs:0x007efe0117f100>).
+Routing Switch started.
+Creating path: 11:11:11:11:11:11 -> 0x1:1 -> 0x1:3 -> 0x4:2 -> 0x4:1 -> 22:22:22:22:22:22
+Creating path: 33:33:33:33:33:33 -> 0x5:1 -> 0x5:3 -> 0x3:2 -> 0x3:1 -> 0x2:2 -> 0x2:1 -> 0x1:2 -> 0x1:1 -> 11:11:11:11:11:11
+Creating path: 11:11:11:11:11:11 -> 0x1:1 -> 0x1:2 -> 0x2:1 -> 0x2:2 -> 0x3:1 -> 0x3:2 -> 0x5:3 -> 0x5:1 -> 33:33:33:33:33:33
+Creating path: 44:44:44:44:44:44 -> 0x6:1 -> 0x6:2 -> 0x5:5 -> 0x5:2 -> 0x1:4 -> 0x1:1 -> 11:11:11:11:11:11
+Creating path: 11:11:11:11:11:11 -> 0x1:1 -> 0x1:3 -> 0x4:2 -> 0x4:3 -> 0x5:4 -> 0x5:5 -> 0x6:2 -> 0x6:1 -> 44:44:44:44:44:44
+Creating path: 22:22:22:22:22:22 -> 0x4:1 -> 0x4:3 -> 0x5:4 -> 0x5:1 -> 33:33:33:33:33:33
+```
+
+
+
+terminal1におけるはじめの4行から、host1,host2,host3,host4は最初一切送受信をしていないことがわかる。
+terminal1における次の7行から、host1,host2,host3,host4それぞれに対して、任意のホストにパケットを送信すると、terminal2におけるCreating path: 
+から始まる文メッセージにより、経路が作成されたことが確認できる。最後の4行のコマンドから、各hostに対して適切な送受信が確認できた。
+また、経路選択はランダム性の高いものであるが、繰り返し回数を増やすと平均的に性能向上が見られた。
+
 
 
 ### 可視化プログラム
