@@ -287,22 +287,123 @@ link
 
 
 まず以下のファイルを変更し、経路情報を保存するようにした。
-* [lib/view/vis.rb](https://github.com/handai-trema/topology-owl/blob/master/lib/view/vis.rb)
+* [lib/view/routing_switch.rb](https://github.com/handai-trema/routing-switch-owl/blob/develop/lib/routing_switch.rb)
+* [lib/view/path_manager.rb](https://github.com/handai-trema/routing-switch-owl/blob/develop/lib/path_manager.rb)
+* [vendor/topology/lib/view/topology_controller.rb](https://github.com/handai-trema/routing-switch-owl/blob/develop/vendor/topology/lib/topology_controller.rb)
+* [vendor/topology/lib/view/controller.rb](https://github.com/handai-trema/routing-switch-owl/blob/develop/vendor/topology/lib/topology.rb)
+* [vendor/topology/lib/view/command_line.rb](https://github.com/handai-trema/routing-switch-owl/blob/develop/vendor/topology/lib/command_line.rb)
+
 
 また、path.txtを出力するにあたって、以下のファイルに変更を加えた。
 * [vendor/topology/lib/view/vis.rb](https://github.com/handai-trema/topology-owl/blob/master/lib/command_line.rb)
 
 それぞれについて説明を行う。
 
-##### lib/view/vis.rb
-ここでは、トポロジの情報を実際にファイルとして書き出すメソッド等を実装した。
-
-
+##### lib/view/routing_switch.rb
+今回の課題では、本ファイルがメインで動作するプログラムとなっている。
+そこでまずトポロジの情報や経路情報の更新を検知するために、前回配布されたtopology.rbのコードを参考にして、オブザーバにtopologyを追加するよう記述した。
 ```ruby
-
+def start(args)
+      @options = Options.new(args)
+      @path_manager = start_path_manager
+      @topology = start_topology
+ 　    @path_manager.add_observer @topology
+      logger.info 'Routing Switch started.'
+    end
 ```
 
 
+##### lib/view/path_manager.rb
+前回配布されたtopology.rbのコードを参考にしてadd_observerメソッドを追加した。
+```ruby
+def add_observer(observer)
+     @observers << observer
+   end
+```
+また、同様にしてmaybe_send_handlerメソッドも追加した。
+```ruby
+def maybe_send_handler(method, *args)
+     @observers.each do |each|
+       each.__send__ method, *args if each.respond_to?(method)
+     end
+   end
+```
+これによって、pathManagerに流れてきたイベントを検知し、テキストファイルの更新ができるようになる。
+
+
+##### vendor/topology/lib/view/topology_controller.rb
+ここでは、`topology_controller.rb`配下にある`topology.rb`の`add_path`メソッドを呼び出すメソッドを実装した。
+```ruby
+ def add_path(path)
+　    @topology.add_path(path)
+  end
+```
+
+
+##### vendor/topology/lib/view/topology.rb
+ここでは受け取ったpathから必要な情報のみ取り出して、@pathsに保存するメソッド`add_path`を実装した。
+```ruby
+def add_path(path)
+     #source node
+     temp_path = []
+     temp_path << path[0].to_s
+     #switch
+     path[1..(path.count-2)].each_slice(2) do |port_a, port_b|
+       temp_path << port_a.dpid.to_s
+     end
+     #destination node
+     temp_path << path.last.to_s
+     #add path
+     @paths << temp_path
+     maybe_send_handler :add_path, path, self
+   end
+```
+まずpathには送信元ノードが入っているので、それを仮保存用の配列に保存する。そしてpathにおいて、次からはスイッチの情報が入っているので、それを最後から２番目の要素まで取り出す。この際、pathにはスイッチの流入ポート、流出ポートそれぞれの情報が順に配列に入っているので`.each_slice(2)`によって２個ずつ要素を取り出し、そのうちの片方だけを利用してスイッチの情報を仮保存用の配列に保存している。最後に、pathの最後の要素が宛先ノードとなっているので、それを取り出して仮保存用の配列に保存する。そしてその配列を@pathsに入れる。
+
+##### vendor/topology/lib/view/command_line.rb
+ここでは、vis.rbがデフォルトで動作するよう以下のような変更を加えた。
+```ruby
+def define_vis_command
+     default_command :vis
+     desc 'Displays topology information (vis mode)'
+     arg_name 'output_file'
+     command :vis do |cmd|
+       cmd.action(&method(:create_vis_view))
+     end
+   end
+```
+
+##### lib/view/vis.rb
+ここでは、リンクIDの管理および書き出しを行うよう変更を行った。
+また、経路情報をファイルとして書き出すよう以下のような実装をした。
+```ruby
+ File.open(@output2, "w") do |file|
+         #paths
+        topology.paths.each do |eachPath|  #for all paths
+          for n_num in 0..eachPath.count-2 do
+            id = checkLinkID(@linkList, eachPath[n_num], eachPath[n_num+1])
+            file.printf("%s ",id)
+          end
+          file.printf("\n")
+        end
+      end
+```
+ここでは、pathsに保存されている各経路をひとつずつ確認する。このとき、ノードIDではなく、リンクIDで書き出しを行わなければならないので、送信元、宛先ノードに対応するリンクをcheckLinkIDメソッドによって探し、その返り値をテキストファイルに書き出している。
+ただし、@linkListには、リンク情報を書き出す際にリンクID、送信元ノードID、宛先ノードIDが保存されている。
+checkLinkIDメソッドは以下のようになっている。
+```ruby
+def checkLinkID(getList, a, b)
+      count_temp=0
+      getList.each do|each_a, each_b, each_c|
+        if(each_b==a && each_c==b) || (each_b==b && each_c==a) then
+          return each_a
+        end
+        count_temp = count_temp + 1
+      end
+      print "false\n"
+    end
+```
+このメソッドでは、リンクID、ノード番号１、ノード番号２のように要素を取り出し、ノード番号が受け取った値と一致していれば、リンクIDを返す。
 
 
 #### vis.js によるトポロジーおよび経路の表示
@@ -311,7 +412,7 @@ link
 
 
 
-### 実行結果
+#### 実行結果
 
 まず、次のように課題の内容に従って実機を準備する。
 

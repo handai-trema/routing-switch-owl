@@ -29,7 +29,7 @@ module View
           file.printf("%s Host:%s\n",each[0].to_s, each[0].to_s)
         end
 
-        @temp = Hash.new {[]}#check link ([ID,source,destination][,,]...[,,])
+        @temp = Hash.new {[]}#check link
         #link of switches
         file.printf("link\n")
         topology.links.each do |each|
