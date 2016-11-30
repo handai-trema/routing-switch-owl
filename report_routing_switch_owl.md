@@ -406,22 +406,163 @@ def checkLinkID(getList, a, b)
 このメソッドでは、リンクID、ノード番号１、ノード番号２のように要素を取り出し、ノード番号が受け取った値と一致していれば、リンクIDを返す。
 
 
-#### vis.js によるトポロジーおよび経路の表示
+
+
+
+
+#### vis.js による動的な経路確認
+
 ここでは、出力されたトポロジー情報のテキストファイルを読み込み、それを基に vis.js を用いてブラウザ上でトポロジーを表示する。
 
+前回の課題２における後半部分で、Group owl では Node.js によりローカルサーバーを立ち上げ、そこにブラウザから HTTP リクエストを送ることによって vis.js によるトポロジーの表示を実現させた。
 
+Node.js を用いた理由は様々であるが、主な点としては拡張性や利便性に優れていると感じたからである。具体的には、本課題を実現するにあたって、前回作成したトポロジー表示プログラム（[topology.js]()）に以下の２つの機能を追加した。
+
+* ファイル監視
+* サーバー・クライアントの双方向通信
+
+これら２つの機能を追加した理由を、vis.js による動的な経路確認の概要と照らし合わせて説明していく。
+
+##### 動的な経路確認の動作概要
+
+既に述べたように、Group owl では進化アルゴリズムの世代毎に決定した経路を path.txt の最後の行に追加していく。つまり、最後の行に追加された経路が最も新しい。ここでは、その最新の経路が切り替わっていく様子を動的にブラウザで確認できるように[前回のプログラム](https://github.com/handai-trema/topology-owl/blob/master/lib/view/topology.js)を改善した。これによって、前回まではブラウザの更新ボタンを押すことでトポロジーを変更していたが、その操作がなくなり、進化プログラムの動作に合わせてリアルタイムにブラウザ上の経路を更新させる。
+
+そのために必要な機能が上述した２つの機能であり、これら２つの機能を使った動作概要の図を以下に示す。
+
+![](sc.png)
+
+簡潔に説明すると、「ファイル監視」機能によって経路ファイルの変更を検知し、「サーバー・クライアントの双方向通信」機能によってその変更内容をクライアント側に送信する。
+
+以降では各機能の説明を行う。
+
+###### ファイル監視
+
+ここでファイル監視とは、ある特定のファイルの状態を変化させるイベントを検知し、それぞれのイベントに応じて特定の操作を行うことである。これを実現するために、Node.js では chokidar ライブラリを利用することができる。
+
+```javascript
+var chokidar = require('chokidar');
+
+var watcher = chokidar.watch('./watched/',{
+  ignored:/[\/\\]\./,
+  persistent:true
+});
+
+watcher.on('ready', function(){
+
+  // 準備完了
+  console.log("Start watching.");
+
+  // ファイルの追加
+  watcher.on('add', function(path){
+    console.log(path+" added.");
+  });
+
+  // ファイルの編集
+  watcher.on('change', function(path){
+    console.log(path+" changed.");
+    var rs = fs.createReadStream('./watched/path.txt');
+    var readline = require('readline');
+    var rl = readline.createInterface(rs, {});
+    var sp = [];
+    rl.on('line', function(line) {
+      sp = line.split(" ");
+    }).on('close', function(){
+      io.sockets.emit('server_to_client', {value:sp});
+    });
+  });
+});
+
+```
+
+
+
+###### サーバー・クライアントの双方向通信
+
+通常、HTTP プロトコルではクライアントの要求があれば、サーバーが応答する。しかし、一方でサーバー側からクライアントにアプローチをとることができないため、クライアントの要求がなければサーバーはアクションを起こすことができない。上述したように、ファイルの更新イベントはサーバーサイドで検知するものであるため、通信の最初のトリガーを送信するのはサーバーからとなる。したがって、クライアントのみからではなく、サーバーサイドからクライアントサイドへの通信をも可能とする双方向通信が必要となる。
+
+双方向通信を実現するための手法として、Node.js では socket.io ライブラリを利用することができる。
+
+```javascript
+var socketio = require('socket.io');
+
+io.sockets.on('connection', function(socket) {
+  console.log("connected.");
+});
+```
+
+
+##### 環境構築
+
+vis.js による動的な経路確認を実現するにあたって、２つの機能をサーバープログラム（[topology.js](https://github.com/handai-trema/topology-owl/blob/master/lib/view/topology.js)）に加えた。そこで、プログラム内で各機能に対応するライブラリを導入する必要があり、環境構築として以下のコマンドを入力する。下記コマンドは、./lib/view/ にて入力する。
+
+```
+npm install chokidar
+npm install socket.io
+```
+
+これらコマンドによって、view 配下に node_modules ディレクトリが作成され、その中に必要なライブラリ群がインストールされる。
 
 
 #### 実行結果
 
+ここでは、経路の表示結果を示す。まず、以下のコマンドより、ルーティングプロセスを起動する。
 
+```
+bundle exec ./bin/trema run l/routing_switch.rb -c trema.conf
+Path Manager started.
+Topology started (#<View::VisJs:0x000000026eaa08>).
+Routing Switch started.
+```
 
+次に、別のターミナルより、以下のコマンドで Node.js を立ち上げる。また、ブラウザから localhost:8174 に接続し、コネクションを確立させておく。
+
+```
+ensyuu2@ensyuu2-VirtualBox:~/routing-switch-owl/vendor/topology/lib/view$ node topology.js
+Server running at http://127.0.0.1:8174/
+Start watching.
+connected.
+```
+
+ここから、経路を作成する。次のコマンドより、host1 から host3 への経路を確立させる。
+
+```
+ensyuu2@ensyuu2-VirtualBox:~/routing-switch-owl$ ./bin/trema send_packets --source host3 --dest host1
+ensyuu2@ensyuu2-VirtualBox:~/routing-switch-owl$ ./bin/trema send_packets --source host1 --dest host3
+```
+
+そうすると、ルーティングプロセスで以下のようにパスが作成された。
+
+```
+Creating path: 11:11:11:11:11:11 -> 0x1:1 -> 0x1:2 -> 0x2:1 -> 0x2:2 -> 0x3:1 -> 0x3:2 -> 0x5:3 -> 0x5:1 -> 33:33:33:33:33:33
+```
+
+この経路確立を以下のように検知した。
+
+```
+watched/path.txt changed.
+```
+
+それにより、[Virtual Network Topology_before.html](https://github.com/handai-trema/routing-switch-owl/blob/develop/Virtual%20Network%20Topology_before.html)のような結果が得られた。同様に、host3 から host1 への経路を確立する。
+
+```
+ensyuu2@ensyuu2-VirtualBox:~/routing-switch-owl$ ./bin/trema send_packets --source host3 --dest host1
+===========
+Creating path: 33:33:33:33:33:33 -> 0x5:1 -> 0x5:4 -> 0x4:3 -> 0x4:2 -> 0x1:3 -> 0x1:1 -> 11:11:11:11:11:11
+==========
+watched/path.txt changed.
+```
+
+それにより、[[Virtual Network Topology_after.html](https://github.com/handai-trema/routing-switch-owl/blob/develop/Virtual%20Network%20Topology_after.html)のような結果が得られた。以上で、経路が変更され、そして可視化された更新後経路を確認した。
 
 ## メモ
 実機の設定は前回の設定が残っている。
 showコマンドで設定情報を確認すること。
 設定用端末のネットワーク設定を逐一確認すること。
 
+### 今後の修正点
+
+* 世代毎の進化
+* topology.txt のファイル監視
 
 ##参考文献
 - デビッド・トーマス+アンドリュー・ハント(2001)「プログラミング Ruby」ピアソン・エデュケーション.  
