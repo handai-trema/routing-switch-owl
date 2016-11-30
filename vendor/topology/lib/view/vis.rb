@@ -8,7 +8,7 @@ module View
 
     def initialize(output = 'vendor/topology/lib/view/')
       @output = output + 'topology.txt'
-      @output2 = output + 'path.txt'
+      @output2 = output + 'watched/path.txt'
     end
 
     def update(_event, _changed, topology)
